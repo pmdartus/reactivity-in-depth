@@ -2,12 +2,84 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Shallow Setter</title>
+    <title>Nested Setter</title>
   </head>
   <body>
     <x-counter></x-counter>
 
     <script>
+      function isObservable(obj) {
+        const isArray = Array.isArray(obj);
+        if (isArray) {
+          return true;
+        }
+
+        const valueProto = Object.getPrototypeOf(obj);
+        if (
+          (valueProto === null || valueProto === Object.prototype) &&
+          Object.isExtensible(obj)
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function observeProperty(obj, key, cb) {
+        let value = obj[key];
+
+        Object.defineProperty(obj, key, {
+          enumerable: true,
+          configurable: true,
+          get() {
+            return value;
+          },
+          set(newValue) {
+            // If the values are identical do nothing.
+            if (value === newValue) {
+              return;
+            }
+
+            // Update the old value in the closure
+            value = newValue;
+
+            observe(newValue, cb);
+            cb();
+          }
+        });
+      }
+
+      function observeArray(arr, cb) {
+        for (let i = 0; i < arr.length; i++) {
+          observe(arr[i]);
+        }
+      }
+
+      function observeObject(obj, cb) {
+        const keys = Object.keys(obj);
+
+        for (let i = 0; i < keys.length; i++) {
+          const key = keys[i];
+          observeProperty(obj, key, cb);
+        }
+      }
+
+      function observe(obj, cb) {
+        // Don't do anything is the object can't be observed or is already observed
+        if (!isObservable(obj) || obj.hasOwnProperty("__ob__")) {
+          return;
+        }
+
+        // Mark as the object as observed
+        Object.defineProperty(obj, "__ob__", {});
+
+        if (Array.isArray(obj)) {
+          observeArray(obj, cb);
+        } else {
+          observeObject(obj, cb);
+        }
+      }
+
       class ReactiveElement extends HTMLElement {
         constructor() {
           super();
@@ -25,12 +97,19 @@
         }
 
         get state() {
-            return this._state;
+          return this._state;
         }
 
         set state(newState) {
-            this._state = newState;
+          if (this._state !== newState) {
+            this._state = newState; 
+            
+            observe(newState, () => {
+              this._scheduleForRendering();
+            });
+
             this._scheduleForRendering();
+          }
         }
 
         _scheduleForRendering() {
@@ -48,8 +127,8 @@
         }
 
         _invokeRender() {
-            this._willRender = false;
-            this.render();
+          this._willRender = false;
+          this.render();
         }
 
         render() {
@@ -88,15 +167,11 @@
         }
 
         decrease() {
-          this.state = {
-            value: this.state.value - 1
-          };
+          this.state.value--;
         }
 
         increase() {
-          this.state = {
-            value: this.state.value + 1
-          };
+          this.state.value++;
         }
       }
 
