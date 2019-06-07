@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Nested Setter</title>
+  </head>
+  <body>
+    <x-counter></x-counter>
+
+    <script>
+      function isObservable(obj) {
+        if (typeof obj !== 'object' || obj === null) {
+          return false;
+        }
+
+        const isArray = Array.isArray(obj);
+        if (isArray) {
+          return true;
+        }
+
+        const valueProto = Object.getPrototypeOf(obj);
+        if (
+          (valueProto === null || valueProto === Object.prototype) &&
+          Object.isExtensible(obj)
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
+      class Observer {
+        constructor(valueMutated) {
+          this.valueMutated = valueMutated;
+
+          this._objToProxy = new WeakMap();
+          this._proxyToObj = new WeakMap();
+        }
+
+        getProxy(objOrProxy) {
+          // Return the passed argument if already proxified
+          if (this._proxyToObj.has(objOrProxy)) {
+            return objOrProxy;
+          }
+
+          return this._proxifyObject(objOrProxy);
+        }
+
+        _proxifyObject(obj) {
+          if (!isObservable(obj)) {
+            return obj;
+          }
+
+          let proxifiedObj = this._objToProxy.get(obj);
+
+          if (proxifiedObj === undefined) {
+            proxifiedObj = new Proxy(obj, {
+              get: (target, prop) => {
+                const value = Reflect.get(target, prop);
+                return this._proxifyObject(value);
+              },
+              getOwnPropertyDescriptor: (target, prop) => {
+                const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+
+                if (descriptor !== undefined) {
+                  if (descriptor.value !== undefined) {
+                    descriptor.value = this._proxifyObject(descriptor.value);
+                  }
+
+                  return descriptor;
+                }
+              },
+
+              set: (target, prop, value) => {
+                Reflect.set(target, prop, value);
+                this.valueMutated();
+                return true;
+              },
+              defineProperty: (target, prop, descriptor) => {
+                Reflect.defineProperty(target, prop, descriptor);
+                this.valueMutated();
+                return true;
+              },
+              deleteProperty: (target, prop) => {
+                Reflect.deleteProperty(target, prop);
+                this.valueMutated();
+                return true;
+              },
+            });
+
+            this._objToProxy.set(obj, proxifiedObj);
+            this._proxyToObj.set(proxifiedObj, obj);
+          }
+
+          return proxifiedObj;
+        }
+      }
+
+      class ReactiveElement extends HTMLElement {
+        constructor() {
+          super();
+
+          this.attachShadow({
+            mode: "open"
+          });
+
+          this._observer = new Observer(() => {
+            this._scheduleForRendering();
+          });
+
+          this.state = {};
+        }
+
+        connectedCallback() {
+          // Invoke the render sync after the custom element is connected to the DOM
+          this._invokeRender();
+        }
+
+        get state() {
+          return this._state;
+        }
+
+        set state(newState) {
+          if (this._state !== newState) {
+            this._state = this._observer.getProxy(newState);
+            this._scheduleForRendering();
+          }
+        }
+
+        _scheduleForRendering() {
+          // Only schedule for rendering if it's not already the case.
+          if (!this._willRender) {
+            this._willRender = true;
+
+            // Invoke the render method in a micro-task.
+            // It avoid touching the DOM multiple times if the component state if
+            // updated multiple times synchornously.
+            Promise.resolve().then(() => {
+              this._invokeRender();
+            });
+          }
+        }
+
+        _invokeRender() {
+          this._willRender = false;
+          this.render();
+        }
+
+        render() {
+          // To be overriden by the child class
+        }
+      }
+
+      class XCounter extends ReactiveElement {
+        constructor() {
+          super();
+
+          this.state = {
+            value: 0
+          };
+        }
+
+        render() {
+          const { shadowRoot, state } = this;
+
+          shadowRoot.innerHTML = `
+            <p id="counter-value"></p>
+            <button id="decrease-btn">-</button>
+            <button id="increase-btn">+</button>
+          `;
+
+          shadowRoot.querySelector("#counter-value").textContent = `Value: ${
+            state.value
+          }`;
+
+          shadowRoot
+            .querySelector("#decrease-btn")
+            .addEventListener("click", () => this.decrease());
+          shadowRoot
+            .querySelector("#increase-btn")
+            .addEventListener("click", () => this.increase());
+        }
+
+        decrease() {
+          this.state.value--;
+        }
+
+        increase() {
+          this.state.value++;
+        }
+      }
+
+      customElements.define("x-counter", XCounter);
+    </script>
+  </body>
+</html>
