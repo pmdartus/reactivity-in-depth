@@ -1,0 +1,12 @@
+{
+  "name": "reactivity-in-depth",
+  "private": true,
+  "author": "Pierre-Marie Dartus <pm@dartus.rf>",
+  "license": "MIT",
+  "scripts": {
+    "start": "serve"
+  },
+  "devDependencies": {
+    "serve": "^11.0.1"
+  }
+}
