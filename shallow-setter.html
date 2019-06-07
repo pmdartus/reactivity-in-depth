@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Imperative</title>
+  </head>
+  <body>
+    <x-counter></x-counter>
+
+    <script>
+      class ReactiveElement extends HTMLElement {
+        constructor() {
+          super();
+
+          this.attachShadow({
+            mode: "open"
+          });
+
+          this._state = {};
+        }
+
+        connectedCallback() {
+          // Invoke the render sync after the custom element is connected to the DOM
+          this._invokeRender();
+        }
+
+        get state() {
+            return this._state;
+        }
+
+        set state(newState) {
+            this._state = newState;
+            this._scheduleForRendering();
+        }
+
+        _scheduleForRendering() {
+          // Only schedule for rendering if it's not already the case.
+          if (!this._willRender) {
+            this._willRender = true;
+
+            // Invoke the render method in a micro-task.
+            // It avoid touching the DOM multiple times if the component state if
+            // updated multiple times synchornously.
+            Promise.resolve().then(() => {
+              this._invokeRender();
+            });
+          }
+        }
+
+        _invokeRender() {
+            this._willRender = false;
+            this.render();
+        }
+
+        render() {
+          // To be overriden by the child class
+        }
+      }
+
+      class XCounter extends ReactiveElement {
+        constructor() {
+          super();
+
+          this.state = {
+            value: 0
+          };
+        }
+
+        render() {
+          const { shadowRoot, state } = this;
+
+          shadowRoot.innerHTML = `
+            <p id="counter-value"></p>
+            <button id="decrease-btn">-</button>
+            <button id="increase-btn">+</button>
+          `;
+
+          shadowRoot.querySelector("#counter-value").textContent = `Value: ${
+            state.value
+          }`;
+
+          shadowRoot
+            .querySelector("#decrease-btn")
+            .addEventListener("click", () => this.decrease());
+          shadowRoot
+            .querySelector("#increase-btn")
+            .addEventListener("click", () => this.increase());
+        }
+
+        decrease() {
+          this.state = {
+            value: this.state.value - 1
+          };
+        }
+
+        increase() {
+          this.state = {
+            value: this.state.value + 1
+          };
+        }
+      }
+
+      customElements.define("x-counter", XCounter);
+    </script>
+  </body>
+</html>
